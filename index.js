@@ -1,4 +1,3 @@
-// 引入必要的套件
 const express = require('express');
 const line = require('@line/bot-sdk');
 const axios = require('axios');
@@ -6,7 +5,6 @@ require('dotenv').config();
 
 const app = express();
 
-// 1. 設定 LINE 的通行證 (從雲端環境變數讀取)
 const lineConfig = {
   channelAccessToken: process.env.LINE_ACCESS_TOKEN,
   channelSecret: process.env.LINE_CHANNEL_SECRET
@@ -14,20 +12,17 @@ const lineConfig = {
 
 const client = new line.Client(lineConfig);
 
-// 2. 建立 Webhook 接收點，用來接收 LINE 傳來的訊息
 app.post('/webhook', line.middleware(lineConfig), (req, res) => {
   Promise
     .all(req.body.events.map(handleEvent))
     .then((result) => res.json(result))
     .catch((err) => {
-      console.error('Webhook 錯誤:', err);
+      console.error(err);
       res.status(500).end();
     });
 });
 
-// 3. 處理每一則訊息
 async function handleEvent(event) {
-  // 如果不是文字訊息，直接略過
   if (event.type !== 'message' || event.message.type !== 'text') {
     return Promise.resolve(null);
   }
@@ -36,13 +31,13 @@ async function handleEvent(event) {
   const userId = event.source.userId;
 
   try {
-    // 4. 將客戶訊息傳送給 Dify (瑞智文教大腦)
+    // 這裡針對 Dify 聊天流 (Chatflow) 的 API 格式進行修正
     const difyResponse = await axios.post('https://api.dify.ai/v1/chat-messages', {
-      inputs: {},          
-      query: userMessage,  
+      inputs: {},            // 聊天流必填項目
+      query: userMessage,    // 使用者訊息
+      user: userId,          // 使用者識別碼
       response_mode: "blocking",
-      conversation_id: "", 
-      user: userId         
+      files: []              // 增加這個確保相容性
     }, {
       headers: {
         'Authorization': `Bearer ${process.env.DIFY_API_KEY}`,
@@ -50,26 +45,24 @@ async function handleEvent(event) {
       }
     });
 
-    // 5. 取得 Dify 回傳的解答
     const aiReply = difyResponse.data.answer;
 
-    // 6. 透過 LINE 回傳給客戶
     return client.replyMessage(event.replyToken, {
       type: 'text',
       text: aiReply
     });
 
   } catch (error) {
-    console.error('Dify 連線錯誤:', error.message);
+    // 輸出詳細錯誤讓老闆好抓蟲
+    console.error('Dify API Error Details:', error.response ? error.response.data : error.message);
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: '系統處理中，請稍後再試。'
+      text: '小編正在思考中，請稍後再試！'
     });
   }
 }
 
-// 7. 啟動伺服器
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`瑞智文教接線生已啟動在 port ${port}`);
+  console.log(`瑞智文教接線生已啟動！`);
 });
